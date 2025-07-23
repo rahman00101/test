@@ -1,0 +1,127 @@
+-- book borrow amount per customer 
+with cte as (
+    select *, row_number() over() as row_num 
+    from books  
+),cte2 as (
+    select title,author , 
+    publication_year, 
+    borrower_count,
+    row_num
+    from cte ct
+    where publicaton_year = (select min(publication_year) from cte as c where ct.author = c.author) and 
+    borrower = (select max(borrower) from cte as c where ct.author = c.author)
+    group by author  ,title 
+)select title , author , pub_year,borrower from cte2 order by row_num ;
+ 
+ 
+ 
+-- customer with highest spent per region wise 
+with cte as (
+    select customer_id , customer_name,
+total_amount_spent ,
+region_id,
+row_number()over(partition by region_id order by total_amount_spent desc , customer_name asc) as rowapplied
+from customers
+)select customer_id , customer_name,
+total_amount_spent ,
+region_id from cte where rowapplied =1
+ 
+ 
+ 
+-- highest number of attackers in a month
+WITH monthly_totals AS (
+  SELECT 
+    MONTH(attack_date) AS month_num,
+    SUM(number_of_attacks) AS total_attacks
+  FROM attacks
+  GROUP BY MONTH(attack_date)
+),
+max_attacks AS (
+  SELECT MAX(total_attacks) AS max_value FROM monthly_totals
+)
+SELECT 
+  month_num,
+  total_attacks
+FROM monthly_totals
+WHERE total_attacks = (SELECT max_value FROM max_attacks)
+ORDER BY month_num;
+ 
+ 
+ 
+ 
+--select category ,product_name , price,
+rating
+from(
+    select * , rank() over(
+    partition by category order by rating desc, price asc, product_name asc) as rnk from products 
+    )ranked where rnk =1
+ 
+ 
+ 
+--wildlife conservation
+ 
+WITH cte AS (
+    SELECT 
+        c.conservation_id,
+        c.area_name,
+        c.region,
+        YEAR(a.sighting_date) AS year_no,
+        COUNT(DISTINCT a.species_name) AS species_count
+    FROM animal_sightings a
+    JOIN conservation_areas c 
+        ON a.conservation_id = c.conservation_id
+    GROUP BY 
+        c.conservation_id, c.area_name, c.region, YEAR(a.sighting_date)
+),
+cte2 AS (
+    SELECT 
+        a.conservation_id,
+        a.area_name,
+        a.region,
+        a.year_no AS year_start,
+        a.species_count AS species_count_start,
+        b.year_no AS year_next,
+        b.species_count AS species_count_next
+    FROM cte a
+    JOIN cte b 
+        ON a.conservation_id = b.conservation_id
+        AND b.year_no = a.year_no + 1
+    WHERE b.species_count < a.species_count
+),
+cte3 AS (  
+    SELECT 
+        *,
+        ROW_NUMBER() OVER (PARTITION BY conservation_id ORDER BY year_start) 
+        - ROW_NUMBER() OVER (PARTITION BY conservation_id ORDER BY year_next) AS grp
+    FROM cte2
+),
+cte4 AS (   
+    SELECT 
+        conservation_id,
+        area_name,
+        region,
+        MIN(year_start) AS decline_start_year,
+        MAX(year_next) AS decline_end_year,
+        MAX(species_count_start) AS species_count_start,
+        MIN(species_count_next) AS species_count_end
+    FROM cte3
+    GROUP BY conservation_id, area_name, region, grp
+    HAVING COUNT(*) >= 1
+),
+cte5 AS (
+    SELECT 
+        *,
+        ROUND(100.0 * (species_count_start - species_count_end) / NULLIF(species_count_start, 0), 2)
+            AS decline_percentage
+    FROM cte4
+)
+SELECT 
+    area_name,
+    region,
+    decline_start_year,
+    decline_end_year,
+    species_count_start,
+    species_count_end,
+    decline_percentage
+FROM cte5
+ORDER BY decline_percentage DESC;
